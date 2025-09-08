@@ -1,5 +1,4 @@
-SQLite ETL Pipeline Simulation
-Overview
+# SQLite ETL Pipeline Simulation Overview - 
 This project implements a complete ETL (Extract, Transform, Load) pipeline using SQLite, demonstrating data processing, quality management, and business analytics for retail/e-commerce scenarios.
 Results Achieved : 
 
