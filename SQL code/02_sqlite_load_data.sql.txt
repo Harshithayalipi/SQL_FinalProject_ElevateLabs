@@ -1,0 +1,119 @@
+-- =====================================================
+-- SQLite ETL Pipeline - Data Loading and Processing
+-- =====================================================
+-- This script loads sample data and performs ETL operations
+
+-- Clear existing data
+DELETE FROM staging_sales;
+DELETE FROM staging_products;
+DELETE FROM staging_customers;
+
+-- =====================================================
+-- LOAD SAMPLE DATA INTO STAGING TABLES
+-- =====================================================
+
+-- Load sample customer data
+INSERT INTO staging_customers (id, customer_name, email, phone, address, city, state, country, postal_code, registration_date, status) VALUES
+(1, 'John Smith', 'john.smith@email.com', '555-0101', '123 Main St', 'New York', 'NY', 'USA', '10001', '2023-01-15', 'active'),
+(2, 'Jane Doe', 'jane.doe@email.com', '555-0102', '456 Oak Ave', 'Los Angeles', 'CA', 'USA', '90210', '2023-01-20', 'active'),
+(3, NULL, 'sarah.wilson@email.com', '555-0103', '789 Pine Rd', 'Chicago', 'IL', 'USA', '60601', '2023-02-01', 'active'),
+(4, 'Mike Johnson', 'mike.johnson@email.com', NULL, '321 Elm St', 'Houston', 'TX', 'USA', '77001', '2023-02-10', 'inactive'),
+(5, 'Emily Brown', 'emily.brown@email.com', '555-0105', '654 Maple Dr', 'Phoenix', 'AZ', 'USA', '85001', '2023-02-15', 'active'),
+(6, 'David Wilson', 'david.wilson@email.com', '555-0106', '987 Cedar Ln', 'Philadelphia', 'PA', 'USA', '19101', NULL, 'active'),
+(7, 'Lisa Anderson', 'lisa.anderson@email.com', '555-0107', '147 Birch St', 'San Antonio', 'TX', 'USA', '78201', '2023-03-01', 'active'),
+(8, 'Robert Taylor', 'robert.taylor@email.com', '555-0108', '258 Walnut Ave', 'San Diego', 'CA', 'USA', '92101', '2023-03-05', 'suspended'),
+(9, 'Jennifer Davis', NULL, '555-0109', '369 Cherry Blvd', 'Dallas', 'TX', 'USA', '75201', '2023-03-10', 'active'),
+(10, 'Michael Miller', 'michael.miller@email.com', '555-0110', '741 Spruce Way', 'San Jose', 'CA', 'USA', '95101', '2023-03-15', 'active'),
+(11, 'Jessica Garcia', 'jessica.garcia@email.com', '555-0111', '852 Poplar St', 'Austin', 'TX', 'USA', '73301', '2023-03-20', 'active'),
+(12, 'Christopher Rodriguez', 'chris.rodriguez@email.com', '555-0112', '963 Willow Dr', 'Jacksonville', 'FL', 'USA', '32099', '2023-03-25', 'inactive'),
+(13, 'Amanda Martinez', 'amanda.martinez@email.com', NULL, '159 Ash Ln', 'Fort Worth', 'TX', 'USA', '76101', '2023-04-01', 'active'),
+(14, 'Joshua Hernandez', 'joshua.hernandez@email.com', '555-0114', '357 Hickory Ave', 'Columbus', 'OH', 'USA', '43085', '2023-04-05', 'active'),
+(15, 'Ashley Lopez', 'ashley.lopez@email.com', '555-0115', '456 Sycamore Rd', 'Charlotte', 'NC', 'USA', '28201', 'invalid_date', 'active'),
+(16, 'Daniel Gonzalez', 'daniel.gonzalez@email.com', '555-0116', '789 Magnolia St', 'San Francisco', 'CA', 'USA', '94101', '2023-04-15', 'active'),
+(17, 'Sarah Lee', 'sarah.lee@email.com', '555-0117', '123 Dogwood Dr', 'Indianapolis', 'IN', 'USA', '46201', '2023-04-20', 'active'),
+(18, 'Matthew Young', 'matthew.young@email.com', '555-0118', '456 Redwood Ave', 'Seattle', 'WA', 'USA', '98101', '2023-04-25', 'active'),
+(19, NULL, 'kevin.king@email.com', '555-0119', '789 Sequoia Blvd', 'Denver', 'CO', 'USA', '80201', '2023-05-01', 'active'),
+(20, 'Stephanie Wright', 'stephanie.wright@email.com', '555-0120', '321 Fir St', 'Washington', 'DC', 'USA', '20001', '2023-05-05', 'active'),
+(21, 'John Smith', 'john.smith.duplicate@email.com', '555-0121', 'different address', 'Boston', 'MA', 'USA', '02101', '2023-05-10', 'active'),
+(22, 'Mary Johnson', 'mary.johnson@email.com', '555-0122', '456 Different St', 'Atlanta', 'GA', 'USA', '30301', NULL, 'active'),
+(23, 'Invalid User', 'invalid@email', '555-0123', '123 Test St', 'Test City', 'XX', 'USA', '00000', '2023-05-20', 'unknown'),
+(24, 'Test Customer', 'test@email.com', NULL, 'No Address', NULL, NULL, 'USA', NULL, '2023-05-25', 'active'),
+(25, 'Final Customer', 'final@email.com', '555-0125', 'Final Address', 'Miami', 'FL', 'USA', '33101', '2023-05-30', 'active');
+
+-- Load sample product data
+INSERT INTO staging_products (id, product_name, category, subcategory, brand, price, cost, supplier, stock_quantity, product_status) VALUES
+(1, 'iPhone 14 Pro', 'Electronics', 'Smartphones', 'Apple', 999.99, 750.00, 'Tech Supply Co', 50, 'active'),
+(2, 'Samsung Galaxy S23', 'Electronics', 'Smartphones', 'Samsung', 899.99, 680.00, 'Mobile World', 75, 'active'),
+(3, 'MacBook Pro 16', 'Electronics', 'Laptops', 'Apple', 2399.99, 1800.00, 'Tech Supply Co', 25, 'active'),
+(4, 'Dell XPS 13', 'Electronics', 'Laptops', 'Dell', 1299.99, 950.00, 'Computer Hub', 40, 'active'),
+(5, 'Sony Headphones', 'Electronics', 'Headphones', 'Sony', 299.99, 180.00, 'Audio Solutions', 100, 'active'),
+(6, 'Nike Air Max', 'Footwear', 'Sneakers', 'Nike', 129.99, 65.00, 'Shoe Warehouse', 200, 'active'),
+(7, 'Adidas Ultraboost', 'Footwear', 'Sneakers', 'Adidas', 179.99, 90.00, 'Shoe Warehouse', 150, 'active'),
+(8, 'Levi''s 501 Jeans', 'Clothing', 'Jeans', 'Levi''s', 79.99, 35.00, 'Fashion Depot', 300, 'active'),
+(9, 'North Face Jacket', 'Clothing', 'Outerwear', 'North Face', 249.99, 125.00, 'Outdoor Gear', 80, 'active'),
+(10, 'Canon EOS R5', 'Electronics', 'Cameras', 'Canon', 3899.99, 2900.00, 'Photo Pro', 15, 'active'),
+(11, 'KitchenAid Mixer', 'Home', 'Appliances', 'KitchenAid', 379.99, 190.00, 'Home Solutions', 60, 'active'),
+(12, 'Dyson V15 Vacuum', 'Home', 'Appliances', 'Dyson', 749.99, 450.00, 'Home Solutions', 35, 'active'),
+(13, 'Fitbit Charge 5', 'Electronics', 'Wearables', 'Fitbit', 199.99, 120.00, 'Health Tech', 120, 'active'),
+(14, 'PlayStation 5', 'Electronics', 'Gaming', 'Sony', 499.99, 400.00, 'Game Store', 10, 'active'),
+(15, 'Xbox Series X', 'Electronics', 'Gaming', 'Microsoft', 499.99, 400.00, 'Game Store', 12, 'active'),
+(16, 'Instant Pot', 'Home', 'Appliances', 'Instant Pot', 99.99, 50.00, 'Kitchen World', 200, 'active'),
+(17, 'Vitamix Blender', 'Home', 'Appliances', 'Vitamix', 449.99, 270.00, 'Kitchen World', 45, 'active'),
+(18, 'Patagonia Vest', 'Clothing', 'Outerwear', 'Patagonia', 159.99, 80.00, 'Outdoor Gear', 90, 'active'),
+(19, 'Ray-Ban Sunglasses', 'Accessories', 'Eyewear', 'Ray-Ban', 189.99, 95.00, 'Fashion Depot', 180, 'active'),
+(20, 'Rolex Watch', 'Accessories', 'Watches', 'Rolex', 8999.99, 6000.00, 'Luxury Items', 5, 'active'),
+(21, NULL, 'Electronics', 'Tablets', 'Samsung', 999.99, 750.00, 'Tech Supply Co', -10, 'active'), -- Invalid: NULL name, negative stock
+(22, 'Test Product', NULL, 'Test', '', 0, 0, 'Test Supplier', 0, 'unknown'), -- Invalid: NULL category, empty brand
+(23, 'Duplicate iPhone', 'Electronics', 'Smartphones', 'Apple', 999.99, 750.00, 'Tech Supply Co', 50, 'active'),
+(24, 'Out of Stock Item', 'Electronics', 'Tablets', 'Samsung', 599.99, 400.00, 'Mobile World', 0, 'out_of_stock'),
+(25, 'Discontinued Item', 'Electronics', 'MP3', 'Apple', 199.99, 120.00, 'Tech Supply Co', 0, 'discontinued');
+
+-- Load sample sales data
+INSERT INTO staging_sales (id, customer_id, product_id, sale_date, quantity, unit_price, discount_percent, total_amount, payment_method, sales_rep) VALUES
+(1, 1, 1, '2023-01-20', 1, 999.99, 5.0, 949.99, 'credit_card', 'Alice Johnson'),
+(2, 2, 6, '2023-01-25', 2, 129.99, 0.0, 259.98, 'cash', 'Bob Smith'),
+(3, 3, 8, '2023-02-05', 1, 79.99, 10.0, 71.99, 'debit_card', 'Alice Johnson'),
+(4, 4, 11, '2023-02-10', 1, 379.99, 0.0, 379.99, 'paypal', 'Carol Davis'),
+(5, 5, 2, '2023-02-15', 1, 899.99, 5.0, 854.99, 'credit_card', 'Bob Smith'),
+(6, 6, 14, '2023-02-20', 1, 499.99, 0.0, 499.99, 'credit_card', 'Alice Johnson'),
+(7, 7, 7, '2023-03-05', 1, 179.99, 15.0, 152.99, 'cash', 'Carol Davis'),
+(8, 8, 9, '2023-03-10', 1, 249.99, 0.0, 249.99, 'debit_card', 'Bob Smith'),
+(9, 9, 12, '2023-03-15', 1, 749.99, 10.0, 674.99, 'credit_card', 'Alice Johnson'),
+(10, 10, 3, '2023-03-20', 1, 2399.99, 3.0, 2327.99, 'bank_transfer', 'Carol Davis'),
+(11, 11, 16, '2023-03-25', 2, 99.99, 0.0, 199.98, 'cash', 'Bob Smith'),
+(12, 12, 5, '2023-04-01', 1, 299.99, 5.0, 284.99, 'credit_card', 'Alice Johnson'),
+(13, 13, 19, '2023-04-05', 3, 189.99, 0.0, 569.97, 'debit_card', 'Carol Davis'),
+(14, 14, 4, '2023-04-10', 1, 1299.99, 8.0, 1195.99, 'paypal', 'Bob Smith'),
+(15, 15, 17, '2023-04-15', 1, 449.99, 0.0, 449.99, 'credit_card', 'Alice Johnson'),
+(16, 16, 10, '2023-04-20', 1, 3899.99, 2.0, 3821.99, 'bank_transfer', 'Carol Davis'),
+(17, 17, 13, '2023-04-25', 2, 199.99, 10.0, 359.98, 'cash', 'Bob Smith'),
+(18, 18, 15, '2023-05-01', 1, 499.99, 0.0, 499.99, 'credit_card', 'Alice Johnson'),
+(19, 19, 18, '2023-05-05', 1, 159.99, 5.0, 151.99, 'debit_card', 'Carol Davis'),
+(20, 20, 20, '2023-05-10', 1, 8999.99, 1.0, 8909.99, 'bank_transfer', 'Bob Smith'),
+(21, 1, 6, '2023-05-15', 1, 129.99, 0.0, 129.99, 'cash', 'Alice Johnson'),
+(22, 2, 8, '2023-05-20', 2, 79.99, 10.0, 143.98, 'credit_card', 'Carol Davis'),
+(23, 3, 11, '2023-05-25', 1, 379.99, 5.0, 360.99, 'debit_card', 'Bob Smith'),
+(24, 4, 2, '2023-05-30', 1, 899.99, 0.0, 899.99, 'paypal', 'Alice Johnson'),
+(25, 5, 14, '2023-06-01', 1, 499.99, 8.0, 459.99, 'credit_card', 'Carol Davis'),
+(26, 999, 1, '2023-06-05', 1, 999.99, 5.0, 949.99, 'credit_card', 'Alice Johnson'), -- Invalid customer_id
+(27, 1, 999, '2023-06-10', 1, 500.00, 0.0, 500.00, 'cash', 'Bob Smith'), -- Invalid product_id
+(28, 2, 1, 'invalid_date', 1, 999.99, 5.0, 949.99, 'credit_card', 'Alice Johnson'), -- Invalid date
+(29, 3, 2, '2023-06-15', -1, 899.99, 0.0, 0.0, 'cash', 'Carol Davis'), -- Invalid quantity
+(30, 4, 3, '2023-06-20', 0, 2399.99, 3.0, 0.00, 'debit_card', 'Bob Smith'), -- Invalid quantity
+(31, 5, 4, '2023-06-25', 1, 1299.99, 150.0, -649.995, 'paypal', 'Alice Johnson'), -- Invalid discount
+(32, 6, 5, '2023-06-30', 1, 299.99, 5.0, 284.99, 'unknown_method', 'Carol Davis'); -- Invalid payment method
+
+-- Log data loading completion
+INSERT INTO etl_execution_log (process_name, table_name, operation_type, start_time, end_time, status, records_processed, records_inserted, error_message)
+VALUES ('LoadSampleData', 'staging_tables', 'EXTRACT', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 'SUCCESS', 
+        (SELECT COUNT(*) FROM staging_customers) + (SELECT COUNT(*) FROM staging_products) + (SELECT COUNT(*) FROM staging_sales),
+        (SELECT COUNT(*) FROM staging_customers) + (SELECT COUNT(*) FROM staging_products) + (SELECT COUNT(*) FROM staging_sales),
+        'Sample data loaded successfully into staging tables');
+
+-- Show loading results
+SELECT 'STAGING DATA LOADED:' as info;
+SELECT 'Customers in staging:' as table_name, COUNT(*) as record_count FROM staging_customers
+UNION ALL
+SELECT 'Products in staging:', COUNT(*) FROM staging_products
+UNION ALL
+SELECT 'Sales in staging:', COUNT(*) FROM staging_sales;

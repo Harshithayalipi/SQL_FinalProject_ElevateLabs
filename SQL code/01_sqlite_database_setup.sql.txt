@@ -1,0 +1,317 @@
+-- =====================================================
+-- SQLite ETL Pipeline Simulation - Database Setup
+-- =====================================================
+-- This script creates all necessary tables for the ETL pipeline
+
+-- Enable foreign keys (important for SQLite)
+PRAGMA foreign_keys = ON;
+
+-- =====================================================
+-- STAGING TABLES (Raw Data Import)
+-- =====================================================
+
+-- Drop existing tables if they exist
+DROP TABLE IF EXISTS staging_sales;
+DROP TABLE IF EXISTS staging_products;
+DROP TABLE IF EXISTS staging_customers;
+
+-- Staging table for customer data
+CREATE TABLE staging_customers (
+    id INTEGER,
+    customer_name TEXT,
+    email TEXT,
+    phone TEXT,
+    address TEXT,
+    city TEXT,
+    state TEXT,
+    country TEXT,
+    postal_code TEXT,
+    registration_date TEXT,
+    status TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Staging table for product data
+CREATE TABLE staging_products (
+    id INTEGER,
+    product_name TEXT,
+    category TEXT,
+    subcategory TEXT,
+    brand TEXT,
+    price REAL,
+    cost REAL,
+    supplier TEXT,
+    stock_quantity INTEGER,
+    product_status TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Staging table for sales data
+CREATE TABLE staging_sales (
+    id INTEGER,
+    customer_id INTEGER,
+    product_id INTEGER,
+    sale_date TEXT,
+    quantity INTEGER,
+    unit_price REAL,
+    discount_percent REAL,
+    total_amount REAL,
+    payment_method TEXT,
+    sales_rep TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+-- =====================================================
+-- PRODUCTION TABLES (Clean, Transformed Data)
+-- =====================================================
+
+-- Drop existing production tables if they exist
+DROP TABLE IF EXISTS sales;
+DROP TABLE IF EXISTS customer_analytics;
+DROP TABLE IF EXISTS monthly_sales_summary;
+DROP TABLE IF EXISTS rejected_records;
+DROP TABLE IF EXISTS data_quality_log;
+DROP TABLE IF EXISTS etl_execution_log;
+DROP TABLE IF EXISTS products;
+DROP TABLE IF EXISTS customers;
+
+-- Production customers table
+CREATE TABLE customers (
+    customer_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    customer_name TEXT NOT NULL,
+    email TEXT UNIQUE,
+    phone TEXT,
+    address TEXT,
+    city TEXT,
+    state TEXT,
+    country TEXT DEFAULT 'USA',
+    postal_code TEXT,
+    registration_date DATE,
+    status TEXT CHECK (status IN ('active', 'inactive', 'suspended')) DEFAULT 'active',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Production products table
+CREATE TABLE products (
+    product_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    product_name TEXT NOT NULL,
+    category TEXT,
+    subcategory TEXT,
+    brand TEXT,
+    price REAL CHECK (price >= 0),
+    cost REAL CHECK (cost >= 0),
+    profit_margin REAL, -- Will be calculated
+    supplier TEXT,
+    stock_quantity INTEGER DEFAULT 0 CHECK (stock_quantity >= 0),
+    status TEXT CHECK (status IN ('active', 'discontinued', 'out_of_stock')) DEFAULT 'active',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Production sales table
+CREATE TABLE sales (
+    sale_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    customer_id INTEGER,
+    product_id INTEGER,
+    sale_date DATE,
+    quantity INTEGER CHECK (quantity > 0),
+    unit_price REAL CHECK (unit_price >= 0),
+    discount_percent REAL DEFAULT 0 CHECK (discount_percent >= 0 AND discount_percent <= 100),
+    subtotal REAL, -- Will be calculated
+    discount_amount REAL, -- Will be calculated
+    total_amount REAL, -- Will be calculated
+    payment_method TEXT CHECK (payment_method IN ('cash', 'credit_card', 'debit_card', 'paypal', 'bank_transfer')),
+    sales_rep TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (customer_id) REFERENCES customers(customer_id),
+    FOREIGN KEY (product_id) REFERENCES products(product_id)
+);
+
+-- =====================================================
+-- AUDIT AND LOGGING TABLES
+-- =====================================================
+
+-- ETL execution log
+CREATE TABLE etl_execution_log (
+    log_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    process_name TEXT,
+    table_name TEXT,
+    operation_type TEXT CHECK (operation_type IN ('EXTRACT', 'TRANSFORM', 'LOAD', 'CLEANUP')),
+    start_time DATETIME,
+    end_time DATETIME,
+    status TEXT CHECK (status IN ('SUCCESS', 'FAILED', 'RUNNING')),
+    records_processed INTEGER DEFAULT 0,
+    records_inserted INTEGER DEFAULT 0,
+    records_updated INTEGER DEFAULT 0,
+    records_deleted INTEGER DEFAULT 0,
+    error_message TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Data quality issues log
+CREATE TABLE data_quality_log (
+    quality_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    table_name TEXT,
+    column_name TEXT,
+    issue_type TEXT,
+    issue_description TEXT,
+    record_count INTEGER,
+    sample_value TEXT,
+    severity TEXT CHECK (severity IN ('LOW', 'MEDIUM', 'HIGH', 'CRITICAL')),
+    resolved INTEGER DEFAULT 0, -- 0 = False, 1 = True
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Rejected records table
+CREATE TABLE rejected_records (
+    reject_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    source_table TEXT,
+    source_record_id INTEGER,
+    rejection_reason TEXT,
+    raw_data TEXT, -- JSON-like text field
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+-- =====================================================
+-- SUMMARY TABLES (Data Mart)
+-- =====================================================
+
+-- Monthly sales summary
+CREATE TABLE monthly_sales_summary (
+    summary_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    year_month TEXT, -- Format: YYYY-MM
+    total_sales REAL,
+    total_orders INTEGER,
+    unique_customers INTEGER,
+    avg_order_value REAL,
+    top_selling_product_id INTEGER,
+    top_category TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (top_selling_product_id) REFERENCES products(product_id)
+);
+
+-- Customer analytics table
+CREATE TABLE customer_analytics (
+    customer_id INTEGER PRIMARY KEY,
+    total_orders INTEGER DEFAULT 0,
+    total_spent REAL DEFAULT 0,
+    avg_order_value REAL DEFAULT 0,
+    first_purchase_date DATE,
+    last_purchase_date DATE,
+    customer_lifetime_days INTEGER,
+    customer_segment TEXT CHECK (customer_segment IN ('new', 'regular', 'vip', 'churned')),
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (customer_id) REFERENCES customers(customer_id)
+);
+
+-- =====================================================
+-- INDEXES FOR PERFORMANCE
+-- =====================================================
+
+-- Staging table indexes
+CREATE INDEX idx_staging_customers_email ON staging_customers(email);
+CREATE INDEX idx_staging_products_category ON staging_products(category);
+CREATE INDEX idx_staging_sales_date ON staging_sales(sale_date);
+
+-- Production table indexes
+CREATE INDEX idx_customers_email ON customers(email);
+CREATE INDEX idx_customers_status ON customers(status);
+CREATE INDEX idx_products_category ON products(category);
+CREATE INDEX idx_products_status ON products(status);
+CREATE INDEX idx_sales_date ON sales(sale_date);
+CREATE INDEX idx_sales_customer ON sales(customer_id);
+CREATE INDEX idx_sales_product ON sales(product_id);
+
+-- Audit table indexes
+CREATE INDEX idx_etl_log_process ON etl_execution_log(process_name);
+CREATE INDEX idx_etl_log_status ON etl_execution_log(status);
+CREATE INDEX idx_quality_log_table ON data_quality_log(table_name);
+
+-- =====================================================
+-- TRIGGERS FOR AUTOMATION
+-- =====================================================
+
+-- Trigger to calculate profit margin when product is inserted/updated
+CREATE TRIGGER tr_calculate_profit_margin_insert
+AFTER INSERT ON products
+FOR EACH ROW
+BEGIN
+    UPDATE products 
+    SET profit_margin = CASE 
+        WHEN NEW.cost > 0 THEN ((NEW.price - NEW.cost) / NEW.cost) * 100 
+        ELSE 0 
+    END
+    WHERE product_id = NEW.product_id;
+END;
+
+CREATE TRIGGER tr_calculate_profit_margin_update
+AFTER UPDATE ON products
+FOR EACH ROW
+BEGIN
+    UPDATE products 
+    SET profit_margin = CASE 
+        WHEN NEW.cost > 0 THEN ((NEW.price - NEW.cost) / NEW.cost) * 100 
+        ELSE 0 
+    END,
+    updated_at = CURRENT_TIMESTAMP
+    WHERE product_id = NEW.product_id;
+END;
+
+-- Trigger to calculate sales amounts when sale is inserted/updated
+CREATE TRIGGER tr_calculate_sales_amounts_insert
+AFTER INSERT ON sales
+FOR EACH ROW
+BEGIN
+    UPDATE sales 
+    SET subtotal = NEW.quantity * NEW.unit_price,
+        discount_amount = (NEW.quantity * NEW.unit_price * NEW.discount_percent) / 100,
+        total_amount = (NEW.quantity * NEW.unit_price) - ((NEW.quantity * NEW.unit_price * NEW.discount_percent) / 100)
+    WHERE sale_id = NEW.sale_id;
+END;
+
+CREATE TRIGGER tr_calculate_sales_amounts_update
+AFTER UPDATE ON sales
+FOR EACH ROW
+BEGIN
+    UPDATE sales 
+    SET subtotal = NEW.quantity * NEW.unit_price,
+        discount_amount = (NEW.quantity * NEW.unit_price * NEW.discount_percent) / 100,
+        total_amount = (NEW.quantity * NEW.unit_price) - ((NEW.quantity * NEW.unit_price * NEW.discount_percent) / 100),
+        updated_at = CURRENT_TIMESTAMP
+    WHERE sale_id = NEW.sale_id;
+END;
+
+-- Trigger to update product stock after sale
+CREATE TRIGGER tr_update_stock_after_sale
+AFTER INSERT ON sales
+FOR EACH ROW
+BEGIN
+    UPDATE products 
+    SET stock_quantity = MAX(0, stock_quantity - NEW.quantity),
+        status = CASE 
+            WHEN stock_quantity - NEW.quantity <= 0 THEN 'out_of_stock'
+            ELSE status 
+        END,
+        updated_at = CURRENT_TIMESTAMP
+    WHERE product_id = NEW.product_id;
+END;
+
+-- Trigger to update timestamps
+CREATE TRIGGER tr_update_customers_timestamp
+AFTER UPDATE ON customers
+FOR EACH ROW
+BEGIN
+    UPDATE customers SET updated_at = CURRENT_TIMESTAMP WHERE customer_id = NEW.customer_id;
+END;
+
+-- =====================================================
+-- VERIFICATION
+-- =====================================================
+
+-- Show all created tables
+SELECT 'Database setup completed successfully!' as status;
+SELECT name FROM sqlite_master WHERE type='table' ORDER BY name;

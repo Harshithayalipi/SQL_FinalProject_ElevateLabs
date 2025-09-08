@@ -1,0 +1,396 @@
+-- =====================================================
+-- SQLite ETL Pipeline - Data Transformation and Cleaning
+-- =====================================================
+-- This script performs the ETL transformation process
+
+-- Clear existing production data
+DELETE FROM sales;
+DELETE FROM customer_analytics;
+DELETE FROM monthly_sales_summary;
+DELETE FROM rejected_records;
+DELETE FROM products;
+DELETE FROM customers;
+
+-- Log start of ETL process
+INSERT INTO etl_execution_log (process_name, table_name, operation_type, start_time, status, error_message)
+VALUES ('ETL_Transform', 'ALL', 'TRANSFORM', CURRENT_TIMESTAMP, 'RUNNING', 'Starting ETL transformation process');
+
+-- =====================================================
+-- STEP 1: CLEAN AND TRANSFORM CUSTOMER DATA
+-- =====================================================
+
+-- Log data quality issues for customers
+INSERT INTO data_quality_log (table_name, column_name, issue_type, issue_description, record_count, severity)
+SELECT 'staging_customers', 'customer_name', 'MISSING_VALUE', 'Customer names are missing', 
+       COUNT(*), 'HIGH'
+FROM staging_customers 
+WHERE customer_name IS NULL OR TRIM(customer_name) = ''
+HAVING COUNT(*) > 0;
+
+INSERT INTO data_quality_log (table_name, column_name, issue_type, issue_description, record_count, severity)
+SELECT 'staging_customers', 'email', 'INVALID_FORMAT', 'Invalid email format detected', 
+       COUNT(*), 'MEDIUM'
+FROM staging_customers 
+WHERE email IS NOT NULL AND email NOT LIKE '%@%.%'
+HAVING COUNT(*) > 0;
+
+-- Insert clean customer records
+INSERT INTO customers (customer_name, email, phone, address, city, state, country, postal_code, registration_date, status)
+SELECT DISTINCT
+    TRIM(customer_name) as customer_name,
+    CASE 
+        WHEN email LIKE '%@%.%' THEN LOWER(TRIM(email))
+        ELSE NULL 
+    END as email,
+    CASE 
+        WHEN phone IS NOT NULL AND TRIM(phone) != '' THEN TRIM(phone)
+        ELSE NULL 
+    END as phone,
+    CASE 
+        WHEN address IS NOT NULL AND TRIM(address) != '' THEN TRIM(address)
+        ELSE NULL 
+    END as address,
+    CASE 
+        WHEN city IS NOT NULL AND TRIM(city) != '' THEN TRIM(city)
+        ELSE NULL 
+    END as city,
+    CASE 
+        WHEN state IS NOT NULL AND TRIM(state) != '' THEN TRIM(state)
+        ELSE NULL 
+    END as state,
+    COALESCE(NULLIF(TRIM(country), ''), 'USA') as country,
+    CASE 
+        WHEN postal_code IS NOT NULL AND TRIM(postal_code) != '' THEN TRIM(postal_code)
+        ELSE NULL 
+    END as postal_code,
+    CASE 
+        WHEN registration_date LIKE '____-__-__' THEN DATE(registration_date)
+        ELSE DATE('now')
+    END as registration_date,
+    CASE 
+        WHEN status IN ('active', 'inactive', 'suspended') THEN status
+        ELSE 'active'
+    END as status
+FROM staging_customers
+WHERE customer_name IS NOT NULL 
+AND TRIM(customer_name) != ''
+AND id NOT IN (
+    -- Exclude duplicates based on email
+    SELECT s2.id 
+    FROM staging_customers s1 
+    JOIN staging_customers s2 ON s1.email = s2.email AND s1.id < s2.id
+    WHERE s1.email IS NOT NULL AND s1.email != ''
+);
+
+-- Log rejected customer records
+INSERT INTO rejected_records (source_table, source_record_id, rejection_reason, raw_data)
+SELECT 'staging_customers', id, 
+       'Missing customer name or duplicate email',
+       '{"id":' || id || ',"customer_name":"' || COALESCE(customer_name, '') || '","email":"' || COALESCE(email, '') || '"}'
+FROM staging_customers
+WHERE customer_name IS NULL 
+OR TRIM(customer_name) = ''
+OR id IN (
+    SELECT s2.id 
+    FROM staging_customers s1 
+    JOIN staging_customers s2 ON s1.email = s2.email AND s1.id < s2.id
+    WHERE s1.email IS NOT NULL AND s1.email != ''
+);
+
+-- Log customer transformation completion
+INSERT INTO etl_execution_log (process_name, table_name, operation_type, start_time, end_time, status, records_processed, records_inserted, error_message)
+VALUES ('CleanCustomerData', 'customers', 'TRANSFORM', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 'SUCCESS', 
+        (SELECT COUNT(*) FROM staging_customers),
+        (SELECT COUNT(*) FROM customers),
+        'Customer data transformation completed');
+
+-- =====================================================
+-- STEP 2: CLEAN AND TRANSFORM PRODUCT DATA
+-- =====================================================
+
+-- Log product data quality issues
+INSERT INTO data_quality_log (table_name, column_name, issue_type, issue_description, record_count, severity)
+SELECT 'staging_products', 'product_name', 'MISSING_VALUE', 'Product names are missing', 
+       COUNT(*), 'HIGH'
+FROM staging_products 
+WHERE product_name IS NULL OR TRIM(product_name) = ''
+HAVING COUNT(*) > 0;
+
+INSERT INTO data_quality_log (table_name, column_name, issue_type, issue_description, record_count, severity)
+SELECT 'staging_products', 'price', 'NEGATIVE_VALUE', 'Negative prices detected', 
+       COUNT(*), 'HIGH'
+FROM staging_products 
+WHERE price < 0 OR cost < 0
+HAVING COUNT(*) > 0;
+
+INSERT INTO data_quality_log (table_name, column_name, issue_type, issue_description, record_count, severity)
+SELECT 'staging_products', 'stock_quantity', 'NEGATIVE_VALUE', 'Negative stock quantities detected', 
+       COUNT(*), 'MEDIUM'
+FROM staging_products 
+WHERE stock_quantity < 0
+HAVING COUNT(*) > 0;
+
+-- Insert clean product records
+INSERT INTO products (product_name, category, subcategory, brand, price, cost, supplier, stock_quantity, status)
+SELECT DISTINCT
+    TRIM(product_name) as product_name,
+    CASE 
+        WHEN category IS NOT NULL AND TRIM(category) != '' THEN TRIM(category)
+        ELSE 'Uncategorized' 
+    END as category,
+    CASE 
+        WHEN subcategory IS NOT NULL AND TRIM(subcategory) != '' THEN TRIM(subcategory)
+        ELSE NULL 
+    END as subcategory,
+    CASE 
+        WHEN brand IS NOT NULL AND TRIM(brand) != '' THEN TRIM(brand)
+        ELSE NULL 
+    END as brand,
+    CASE 
+        WHEN price >= 0 THEN price
+        ELSE 0 
+    END as price,
+    CASE 
+        WHEN cost >= 0 THEN cost
+        ELSE 0 
+    END as cost,
+    CASE 
+        WHEN supplier IS NOT NULL AND TRIM(supplier) != '' THEN TRIM(supplier)
+        ELSE 'Unknown Supplier' 
+    END as supplier,
+    CASE 
+        WHEN stock_quantity >= 0 THEN stock_quantity
+        ELSE 0 
+    END as stock_quantity,
+    CASE 
+        WHEN product_status IN ('active', 'discontinued', 'out_of_stock') THEN product_status
+        ELSE 'active'
+    END as status
+FROM staging_products
+WHERE product_name IS NOT NULL 
+AND TRIM(product_name) != ''
+AND id NOT IN (
+    -- Exclude duplicates based on product name and brand
+    SELECT s2.id 
+    FROM staging_products s1 
+    JOIN staging_products s2 ON s1.product_name = s2.product_name 
+    AND COALESCE(s1.brand, '') = COALESCE(s2.brand, '') AND s1.id < s2.id
+    WHERE s1.product_name IS NOT NULL AND s1.product_name != ''
+);
+
+-- Log rejected product records
+INSERT INTO rejected_records (source_table, source_record_id, rejection_reason, raw_data)
+SELECT 'staging_products', id, 
+       'Missing product name or duplicate product',
+       '{"id":' || id || ',"product_name":"' || COALESCE(product_name, '') || '","category":"' || COALESCE(category, '') || '"}'
+FROM staging_products
+WHERE product_name IS NULL 
+OR TRIM(product_name) = ''
+OR id IN (
+    SELECT s2.id 
+    FROM staging_products s1 
+    JOIN staging_products s2 ON s1.product_name = s2.product_name 
+    AND COALESCE(s1.brand, '') = COALESCE(s2.brand, '') AND s1.id < s2.id
+    WHERE s1.product_name IS NOT NULL AND s1.product_name != ''
+);
+
+-- Log product transformation completion
+INSERT INTO etl_execution_log (process_name, table_name, operation_type, start_time, end_time, status, records_processed, records_inserted, error_message)
+VALUES ('CleanProductData', 'products', 'TRANSFORM', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 'SUCCESS', 
+        (SELECT COUNT(*) FROM staging_products),
+        (SELECT COUNT(*) FROM products),
+        'Product data transformation completed');
+
+-- =====================================================
+-- STEP 3: CLEAN AND TRANSFORM SALES DATA
+-- =====================================================
+
+-- Log sales data quality issues
+INSERT INTO data_quality_log (table_name, column_name, issue_type, issue_description, record_count, severity)
+SELECT 'staging_sales', 'customer_id', 'INVALID_REFERENCE', 'Customer IDs not found in customers table', 
+       COUNT(*), 'HIGH'
+FROM staging_sales s
+LEFT JOIN customers c ON s.customer_id = c.customer_id
+WHERE c.customer_id IS NULL
+HAVING COUNT(*) > 0;
+
+INSERT INTO data_quality_log (table_name, column_name, issue_type, issue_description, record_count, severity)
+SELECT 'staging_sales', 'product_id', 'INVALID_REFERENCE', 'Product IDs not found in products table', 
+       COUNT(*), 'HIGH'
+FROM staging_sales s
+LEFT JOIN products p ON s.product_id = p.product_id
+WHERE p.product_id IS NULL
+HAVING COUNT(*) > 0;
+
+INSERT INTO data_quality_log (table_name, column_name, issue_type, issue_description, record_count, severity)
+SELECT 'staging_sales', 'quantity', 'INVALID_VALUE', 'Quantity must be greater than 0', 
+       COUNT(*), 'HIGH'
+FROM staging_sales 
+WHERE quantity <= 0
+HAVING COUNT(*) > 0;
+
+INSERT INTO data_quality_log (table_name, column_name, issue_type, issue_description, record_count, severity)
+SELECT 'staging_sales', 'discount_percent', 'INVALID_VALUE', 'Discount percentage must be between 0 and 100', 
+       COUNT(*), 'MEDIUM'
+FROM staging_sales 
+WHERE discount_percent < 0 OR discount_percent > 100
+HAVING COUNT(*) > 0;
+
+-- Insert clean sales records
+INSERT INTO sales (customer_id, product_id, sale_date, quantity, unit_price, discount_percent, payment_method, sales_rep)
+SELECT 
+    s.customer_id,
+    s.product_id,
+    CASE 
+        WHEN s.sale_date LIKE '____-__-__' THEN DATE(s.sale_date)
+        ELSE DATE('now')
+    END as sale_date,
+    CASE 
+        WHEN s.quantity > 0 THEN s.quantity
+        ELSE 1 
+    END as quantity,
+    CASE 
+        WHEN s.unit_price >= 0 THEN s.unit_price
+        ELSE 0 
+    END as unit_price,
+    CASE 
+        WHEN s.discount_percent >= 0 AND s.discount_percent <= 100 THEN s.discount_percent
+        ELSE 0 
+    END as discount_percent,
+    CASE 
+        WHEN s.payment_method IN ('cash', 'credit_card', 'debit_card', 'paypal', 'bank_transfer') 
+        THEN s.payment_method
+        ELSE 'cash'
+    END as payment_method,
+    CASE 
+        WHEN s.sales_rep IS NOT NULL AND TRIM(s.sales_rep) != '' THEN TRIM(s.sales_rep)
+        ELSE 'Unknown Rep' 
+    END as sales_rep
+FROM staging_sales s
+INNER JOIN customers c ON s.customer_id = c.customer_id
+INNER JOIN products p ON s.product_id = p.product_id
+WHERE s.quantity > 0 
+AND s.unit_price >= 0;
+
+-- Log rejected sales records
+INSERT INTO rejected_records (source_table, source_record_id, rejection_reason, raw_data)
+SELECT 'staging_sales', s.id, 
+       CASE 
+           WHEN c.customer_id IS NULL THEN 'Invalid customer ID'
+           WHEN p.product_id IS NULL THEN 'Invalid product ID'
+           WHEN s.quantity <= 0 THEN 'Invalid quantity'
+           WHEN s.unit_price < 0 THEN 'Invalid unit price'
+           ELSE 'Data validation failed'
+       END as rejection_reason,
+       '{"id":' || s.id || ',"customer_id":' || s.customer_id || ',"product_id":' || s.product_id || ',"quantity":' || s.quantity || '}' as raw_data
+FROM staging_sales s
+LEFT JOIN customers c ON s.customer_id = c.customer_id
+LEFT JOIN products p ON s.product_id = p.product_id
+WHERE c.customer_id IS NULL 
+OR p.product_id IS NULL 
+OR s.quantity <= 0 
+OR s.unit_price < 0;
+
+-- Log sales transformation completion
+INSERT INTO etl_execution_log (process_name, table_name, operation_type, start_time, end_time, status, records_processed, records_inserted, error_message)
+VALUES ('CleanSalesData', 'sales', 'TRANSFORM', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 'SUCCESS', 
+        (SELECT COUNT(*) FROM staging_sales),
+        (SELECT COUNT(*) FROM sales),
+        'Sales data transformation completed');
+
+-- =====================================================
+-- STEP 4: GENERATE ANALYTICS TABLES
+-- =====================================================
+
+-- Generate monthly sales summary
+INSERT INTO monthly_sales_summary (year_month, total_sales, total_orders, unique_customers, avg_order_value, top_category)
+SELECT 
+    strftime('%Y-%m', s.sale_date) as year_month,
+    SUM(s.total_amount) as total_sales,
+    COUNT(*) as total_orders,
+    COUNT(DISTINCT s.customer_id) as unique_customers,
+    AVG(s.total_amount) as avg_order_value,
+    (SELECT p3.category 
+     FROM sales s3 
+     INNER JOIN products p3 ON s3.product_id = p3.product_id
+     WHERE strftime('%Y-%m', s3.sale_date) = strftime('%Y-%m', s.sale_date)
+     GROUP BY p3.category 
+     ORDER BY SUM(s3.total_amount) DESC 
+     LIMIT 1) as top_category
+FROM sales s
+INNER JOIN products p ON s.product_id = p.product_id
+GROUP BY strftime('%Y-%m', s.sale_date)
+ORDER BY year_month;
+
+-- Generate customer analytics
+INSERT INTO customer_analytics (customer_id, total_orders, total_spent, avg_order_value, first_purchase_date, last_purchase_date, customer_lifetime_days, customer_segment)
+SELECT 
+    c.customer_id,
+    COALESCE(s.total_orders, 0) as total_orders,
+    COALESCE(s.total_spent, 0) as total_spent,
+    COALESCE(s.avg_order_value, 0) as avg_order_value,
+    s.first_purchase_date,
+    s.last_purchase_date,
+    COALESCE(JULIANDAY(s.last_purchase_date) - JULIANDAY(s.first_purchase_date), 0) as customer_lifetime_days,
+    CASE 
+        WHEN s.total_orders IS NULL THEN 'new'
+        WHEN s.total_spent >= 5000 THEN 'vip'
+        WHEN s.total_orders >= 5 THEN 'regular'
+        WHEN JULIANDAY('now') - JULIANDAY(s.last_purchase_date) > 90 THEN 'churned'
+        ELSE 'regular'
+    END as customer_segment
+FROM customers c
+LEFT JOIN (
+    SELECT 
+        customer_id,
+        COUNT(*) as total_orders,
+        SUM(total_amount) as total_spent,
+        AVG(total_amount) as avg_order_value,
+        MIN(sale_date) as first_purchase_date,
+        MAX(sale_date) as last_purchase_date
+    FROM sales 
+    GROUP BY customer_id
+) s ON c.customer_id = s.customer_id;
+
+-- Log analytics generation completion
+INSERT INTO etl_execution_log (process_name, table_name, operation_type, start_time, end_time, status, records_processed, records_inserted, error_message)
+VALUES ('GenerateAnalytics', 'analytics_tables', 'LOAD', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 'SUCCESS', 
+        0,
+        (SELECT COUNT(*) FROM monthly_sales_summary) + (SELECT COUNT(*) FROM customer_analytics),
+        'Analytics tables generated successfully');
+
+-- Log completion of complete ETL process
+INSERT INTO etl_execution_log (process_name, table_name, operation_type, start_time, end_time, status, records_processed, records_inserted, error_message)
+VALUES ('ETL_Transform', 'ALL', 'LOAD', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 'SUCCESS', 
+        0, 0, 'Complete ETL transformation finished successfully');
+
+-- =====================================================
+-- VERIFICATION AND RESULTS
+-- =====================================================
+
+SELECT 'ETL TRANSFORMATION COMPLETED!' as status;
+
+-- Show production data counts
+SELECT 'PRODUCTION DATA LOADED:' as info;
+SELECT 'Customers in production:' as table_name, COUNT(*) as record_count FROM customers
+UNION ALL
+SELECT 'Products in production:', COUNT(*) FROM products
+UNION ALL
+SELECT 'Sales in production:', COUNT(*) FROM sales
+UNION ALL
+SELECT 'Monthly summaries:', COUNT(*) FROM monthly_sales_summary
+UNION ALL
+SELECT 'Customer analytics:', COUNT(*) FROM customer_analytics;
+
+-- Show rejected records summary
+SELECT 'REJECTED RECORDS SUMMARY:' as info;
+SELECT source_table, COUNT(*) as rejected_count, rejection_reason
+FROM rejected_records 
+GROUP BY source_table, rejection_reason;
+
+-- Show data quality issues
+SELECT 'DATA QUALITY ISSUES SUMMARY:' as info;
+SELECT table_name, issue_type, severity, COUNT(*) as issue_count
+FROM data_quality_log 
+GROUP BY table_name, issue_type, severity
+ORDER BY severity DESC, table_name;

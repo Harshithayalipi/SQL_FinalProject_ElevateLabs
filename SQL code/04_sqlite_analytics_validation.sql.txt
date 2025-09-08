@@ -1,0 +1,339 @@
+-- =====================================================
+-- SQLite ETL Pipeline - Business Analytics and Validation
+-- =====================================================
+-- This script provides business analytics and validates the ETL results
+
+SELECT 'RUNNING BUSINESS ANALYTICS AND VALIDATION...' as status;
+
+-- =====================================================
+-- SECTION 1: DATA VALIDATION QUERIES
+-- =====================================================
+
+SELECT 'CHECKING DATA INTEGRITY...' as section;
+
+-- Check for sales with invalid customer references (should be 0)
+SELECT 'Sales with invalid customer IDs:' as check_type, COUNT(*) as count
+FROM sales s
+LEFT JOIN customers c ON s.customer_id = c.customer_id
+WHERE c.customer_id IS NULL;
+
+-- Check for sales with invalid product references (should be 0)
+SELECT 'Sales with invalid product IDs:' as check_type, COUNT(*) as count
+FROM sales s
+LEFT JOIN products p ON s.product_id = p.product_id
+WHERE p.product_id IS NULL;
+
+-- Check if all customers have valid email formats (should be 0 invalid)
+SELECT 'Customers with invalid email formats:' as check_type, COUNT(*) as count
+FROM customers 
+WHERE email IS NOT NULL 
+AND email NOT LIKE '%@%.%';
+
+-- Check if all products have non-negative prices (should be 0 negative)
+SELECT 'Products with negative prices:' as check_type, COUNT(*) as count
+FROM products 
+WHERE price < 0 OR cost < 0;
+
+-- Check if all sales have valid quantities (should be 0 invalid)
+SELECT 'Sales with invalid quantities:' as check_type, COUNT(*) as count
+FROM sales 
+WHERE quantity <= 0;
+
+-- =====================================================
+-- SECTION 2: BUSINESS ANALYTICS QUERIES
+-- =====================================================
+
+SELECT 'RUNNING BUSINESS ANALYTICS QUERIES...' as section;
+
+-- Top 5 products by revenue
+SELECT 'TOP 5 PRODUCTS BY REVENUE:' as analysis;
+SELECT 
+    p.product_name,
+    p.category,
+    p.brand,
+    COUNT(s.sale_id) as total_sales,
+    SUM(s.quantity) as total_quantity_sold,
+    SUM(s.total_amount) as total_revenue,
+    AVG(s.total_amount) as avg_sale_value,
+    ROUND(p.profit_margin, 2) as profit_margin_percent
+FROM products p
+JOIN sales s ON p.product_id = s.product_id
+GROUP BY p.product_id, p.product_name, p.category, p.brand, p.profit_margin
+ORDER BY total_revenue DESC
+LIMIT 5;
+
+-- Customer segmentation analysis
+SELECT 'CUSTOMER SEGMENTATION ANALYSIS:' as analysis;
+SELECT 
+    customer_segment,
+    COUNT(*) as customer_count,
+    ROUND(AVG(total_spent), 2) as avg_total_spent,
+    ROUND(AVG(total_orders), 2) as avg_total_orders,
+    ROUND(AVG(avg_order_value), 2) as avg_order_value,
+    ROUND(AVG(customer_lifetime_days), 0) as avg_lifetime_days
+FROM customer_analytics
+GROUP BY customer_segment
+ORDER BY avg_total_spent DESC;
+
+-- Monthly sales trend analysis
+SELECT 'MONTHLY SALES TREND:' as analysis;
+SELECT 
+    year_month,
+    ROUND(total_sales, 2) as total_sales,
+    total_orders,
+    unique_customers,
+    ROUND(avg_order_value, 2) as avg_order_value,
+    top_category
+FROM monthly_sales_summary
+ORDER BY year_month;
+
+-- Product category performance with profit analysis
+SELECT 'CATEGORY PERFORMANCE WITH PROFIT ANALYSIS:' as analysis;
+SELECT 
+    p.category,
+    COUNT(DISTINCT p.product_id) as unique_products,
+    COUNT(s.sale_id) as total_sales,
+    SUM(s.quantity) as total_quantity_sold,
+    ROUND(SUM(s.total_amount), 2) as total_revenue,
+    ROUND(SUM(s.quantity * p.cost), 2) as total_cost,
+    ROUND(SUM(s.total_amount) - SUM(s.quantity * p.cost), 2) as total_profit,
+    ROUND(
+        ((SUM(s.total_amount) - SUM(s.quantity * p.cost)) / SUM(s.total_amount)) * 100, 2
+    ) as profit_margin_percent,
+    ROUND(AVG(p.stock_quantity), 0) as avg_stock_level
+FROM products p
+LEFT JOIN sales s ON p.product_id = s.product_id
+GROUP BY p.category
+ORDER BY total_profit DESC;
+
+-- Sales representative performance
+SELECT 'SALES REPRESENTATIVE PERFORMANCE:' as analysis;
+SELECT 
+    sales_rep,
+    COUNT(sale_id) as total_sales,
+    COUNT(DISTINCT customer_id) as unique_customers,
+    ROUND(SUM(total_amount), 2) as total_revenue,
+    ROUND(AVG(total_amount), 2) as avg_sale_value,
+    SUM(quantity) as total_units_sold,
+    ROUND(SUM(total_amount) / COUNT(sale_id), 2) as revenue_per_sale
+FROM sales
+GROUP BY sales_rep
+ORDER BY total_revenue DESC;
+
+-- =====================================================
+-- SECTION 3: DATA QUALITY MONITORING
+-- =====================================================
+
+SELECT 'RUNNING DATA QUALITY MONITORING...' as section;
+
+-- Identify potential data quality issues
+SELECT 'POTENTIAL DATA QUALITY ISSUES:' as analysis;
+
+-- Customers with no purchase history
+SELECT 'Customers with no purchases' as issue_type, COUNT(*) as count
+FROM customers c
+LEFT JOIN sales s ON c.customer_id = s.customer_id
+WHERE s.customer_id IS NULL
+UNION ALL
+
+-- Products with no sales
+SELECT 'Products with no sales', COUNT(*)
+FROM products p
+LEFT JOIN sales s ON p.product_id = s.product_id
+WHERE s.product_id IS NULL
+UNION ALL
+
+-- High-value customers without recent activity (>90 days)
+SELECT 'High-value customers inactive >90 days', COUNT(*)
+FROM customer_analytics ca
+WHERE ca.total_spent > 1000 
+AND JULIANDAY('now') - JULIANDAY(ca.last_purchase_date) > 90
+UNION ALL
+
+-- Products with low stock (<=10 units)
+SELECT 'Products with low stock (<=10)', COUNT(*)
+FROM products 
+WHERE stock_quantity <= 10 AND status = 'active';
+
+-- Revenue analysis by time periods
+SELECT 'REVENUE ANALYSIS BY TIME PERIODS:' as analysis;
+SELECT 
+    'Daily Average' as period_type,
+    ROUND(AVG(daily_sales), 2) as avg_revenue
+FROM (
+    SELECT DATE(sale_date) as sale_day, SUM(total_amount) as daily_sales
+    FROM sales
+    GROUP BY DATE(sale_date)
+) daily_summary
+UNION ALL
+SELECT 
+    'Monthly Average',
+    ROUND(AVG(total_sales), 2)
+FROM monthly_sales_summary;
+
+-- =====================================================
+-- SECTION 4: ETL PERFORMANCE MONITORING
+-- =====================================================
+
+SELECT 'ETL PERFORMANCE MONITORING:' as section;
+
+-- ETL execution performance summary
+SELECT 'ETL EXECUTION SUMMARY:' as analysis;
+SELECT 
+    operation_type,
+    COUNT(*) as execution_count,
+    SUM(CASE WHEN status = 'SUCCESS' THEN 1 ELSE 0 END) as successful_runs,
+    SUM(CASE WHEN status = 'FAILED' THEN 1 ELSE 0 END) as failed_runs,
+    ROUND(
+        (CAST(SUM(CASE WHEN status = 'SUCCESS' THEN 1 ELSE 0 END) AS REAL) / COUNT(*)) * 100, 2
+    ) as success_rate_percent,
+    SUM(records_processed) as total_records_processed,
+    SUM(records_inserted) as total_records_inserted,
+    SUM(records_deleted) as total_records_deleted
+FROM etl_execution_log
+GROUP BY operation_type
+ORDER BY execution_count DESC;
+
+-- Data quality issues summary by severity
+SELECT 'DATA QUALITY ISSUES BY SEVERITY:' as analysis;
+SELECT 
+    severity,
+    COUNT(*) as issue_count,
+    GROUP_CONCAT(DISTINCT table_name) as affected_tables,
+    GROUP_CONCAT(DISTINCT issue_type) as issue_types
+FROM data_quality_log
+WHERE resolved = 0
+GROUP BY severity
+ORDER BY 
+    CASE severity 
+        WHEN 'CRITICAL' THEN 1 
+        WHEN 'HIGH' THEN 2 
+        WHEN 'MEDIUM' THEN 3 
+        WHEN 'LOW' THEN 4 
+    END;
+
+-- =====================================================
+-- SECTION 5: ADVANCED ANALYTICS
+-- =====================================================
+
+SELECT 'RUNNING ADVANCED ANALYTICS...' as section;
+
+-- Customer Lifetime Value analysis
+SELECT 'CUSTOMER LIFETIME VALUE ANALYSIS:' as analysis;
+SELECT 
+    ca.customer_segment,
+    COUNT(*) as customer_count,
+    ROUND(AVG(ca.total_spent), 2) as avg_total_spent,
+    ROUND(AVG(ca.customer_lifetime_days), 0) as avg_lifetime_days,
+    ROUND(AVG(ca.total_spent / CASE WHEN ca.customer_lifetime_days > 0 THEN ca.customer_lifetime_days ELSE 1 END), 2) as avg_daily_value,
+    ROUND(MAX(ca.total_spent), 2) as max_customer_value,
+    ROUND(MIN(ca.total_spent), 2) as min_customer_value
+FROM customer_analytics ca
+WHERE ca.customer_lifetime_days >= 0
+GROUP BY ca.customer_segment
+ORDER BY avg_total_spent DESC;
+
+-- Product recommendation analysis (frequently bought together)
+SELECT 'PRODUCT ASSOCIATION ANALYSIS:' as analysis;
+SELECT 
+    p1.product_name as product_1,
+    p2.product_name as product_2,
+    COUNT(*) as times_bought_together,
+    ROUND(AVG(s1.total_amount + s2.total_amount), 2) as avg_combined_value
+FROM sales s1
+JOIN sales s2 ON s1.customer_id = s2.customer_id 
+    AND s1.sale_date = s2.sale_date 
+    AND s1.product_id < s2.product_id
+JOIN products p1 ON s1.product_id = p1.product_id
+JOIN products p2 ON s2.product_id = p2.product_id
+GROUP BY s1.product_id, s2.product_id, p1.product_name, p2.product_name
+HAVING times_bought_together > 1
+ORDER BY times_bought_together DESC, avg_combined_value DESC
+LIMIT 10;
+
+-- Seasonal sales pattern analysis
+SELECT 'SEASONAL SALES PATTERN:' as analysis;
+SELECT 
+    CAST(strftime('%m', sale_date) AS INTEGER) as month_number,
+    CASE CAST(strftime('%m', sale_date) AS INTEGER)
+        WHEN 1 THEN 'January'
+        WHEN 2 THEN 'February'
+        WHEN 3 THEN 'March'
+        WHEN 4 THEN 'April'
+        WHEN 5 THEN 'May'
+        WHEN 6 THEN 'June'
+        WHEN 7 THEN 'July'
+        WHEN 8 THEN 'August'
+        WHEN 9 THEN 'September'
+        WHEN 10 THEN 'October'
+        WHEN 11 THEN 'November'
+        WHEN 12 THEN 'December'
+    END as month_name,
+    COUNT(*) as total_orders,
+    ROUND(SUM(total_amount), 2) as total_revenue,
+    ROUND(AVG(total_amount), 2) as avg_order_value,
+    COUNT(DISTINCT customer_id) as unique_customers
+FROM sales
+GROUP BY CAST(strftime('%m', sale_date) AS INTEGER)
+ORDER BY month_number;
+
+-- =====================================================
+-- SECTION 6: FINAL VALIDATION SUMMARY
+-- =====================================================
+
+SELECT 'FINAL VALIDATION SUMMARY:' as section;
+
+-- Summary of all tables
+SELECT 'FINAL TABLE COUNTS:' as summary;
+SELECT 'customers' as table_name, COUNT(*) as record_count FROM customers
+UNION ALL SELECT 'products', COUNT(*) FROM products
+UNION ALL SELECT 'sales', COUNT(*) FROM sales
+UNION ALL SELECT 'monthly_sales_summary', COUNT(*) FROM monthly_sales_summary
+UNION ALL SELECT 'customer_analytics', COUNT(*) FROM customer_analytics
+UNION ALL SELECT 'rejected_records', COUNT(*) FROM rejected_records
+UNION ALL SELECT 'etl_execution_log', COUNT(*) FROM etl_execution_log
+UNION ALL SELECT 'data_quality_log', COUNT(*) FROM data_quality_log;
+
+-- Final business metrics
+SELECT 'KEY BUSINESS METRICS:' as metrics;
+SELECT 
+    'Total Revenue' as metric_name,
+    '$' || ROUND(SUM(total_amount), 2) as metric_value
+FROM sales
+UNION ALL
+SELECT 
+    'Total Customers',
+    CAST(COUNT(*) AS TEXT)
+FROM customers
+UNION ALL
+SELECT 
+    'Total Products',
+    CAST(COUNT(*) AS TEXT)
+FROM products
+UNION ALL
+SELECT 
+    'Average Order Value',
+    '$' || ROUND(AVG(total_amount), 2)
+FROM sales
+UNION ALL
+SELECT 
+    'Total Orders',
+    CAST(COUNT(*) AS TEXT)
+FROM sales;
+
+-- ETL execution log summary
+SELECT 'ETL EXECUTION LOG (Latest 10):' as log_summary;
+SELECT 
+    process_name,
+    table_name,
+    operation_type,
+    status,
+    records_processed,
+    records_inserted,
+    COALESCE(error_message, 'Success') as message,
+    created_at
+FROM etl_execution_log 
+ORDER BY created_at DESC
+LIMIT 10;
+
+SELECT 'ETL PIPELINE VALIDATION COMPLETED SUCCESSFULLY!' as final_status;
